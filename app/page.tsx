@@ -193,7 +193,7 @@ export default function LandingPage() {
                   <span className="font-mono font-bold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded text-[10px]">PASO 1</span>
                   <p className="font-bold text-slate-900 mt-2">Pestaña de Privacidad</p>
                   <p className="text-[11px] text-slate-500 leading-relaxed mt-1">
-                    Inicia sesión en la versión web de Spotify, ve al panel de control de tu cuenta y entra en la sección llamada <strong>"Privacidad de los datos"</strong>.
+                    Inicia sesión en la versión web de Spotify, ve al panel de control de tu cuenta y entra en la sección llamada <strong>&#34;Privacidad de los datos&#34;</strong>.
                   </p>
                 </div>
               </li>
@@ -201,9 +201,9 @@ export default function LandingPage() {
               <li className="bg-white p-4 rounded-xl border border-slate-200/60 space-y-1.5 shadow-sm flex flex-col justify-between">
                 <div>
                   <span className="font-mono font-bold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded text-[10px]">PASO 2</span>
-                  <p className="font-bold text-slate-900 mt-2">Solicitar "Datos de la cuenta"</p>
+                  <p className="font-bold text-slate-900 mt-2">Solicitar &#34;Datos de la cuenta&#34;</p>
                   <p className="text-[11px] text-slate-500 leading-relaxed mt-1">
-                    Baja hasta el bloque de descargas y solicita el paquete básico de <strong>"Datos de la cuenta"</strong>. Spotify procesará tus ficheros y te enviará un zip por email en unos días.
+                    Baja hasta el bloque de descargas y solicita el paquete básico de <strong>&#34;Datos de la cuenta&#34;</strong>. Spotify procesará tus ficheros y te enviará un zip por email en unos días.
                   </p>
                 </div>
               </li>

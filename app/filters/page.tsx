@@ -459,7 +459,7 @@ export default function DashboardPage() {
                         {results.length === 0 ? (
                             <div className="h-96 flex flex-col items-center justify-center text-slate-400 text-center px-4">
                                 {rawHistory.length > 0 ? (
-                                    <p className="text-sm font-medium">Ajusta los parámetros de la izquierda y haz click en "Aplicar todos los filtros"</p>
+                                    <p className="text-sm font-medium">Ajusta los parámetros de la izquierda y haz click en &#34;Aplicar todos los filtros&#34;</p>
                                 ) : (
                                     <p className="text-sm font-medium">No hay registros en caché. Ve a la pantalla principal para cargar tu historial.</p>
                                 )}

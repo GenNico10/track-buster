@@ -2,26 +2,16 @@
 
 import { useState, useMemo } from 'react';
 import { useHistory } from '../context/HistoryContext';
-import { useSession } from 'next-auth/react';
-
-interface FilteredTrack {
-    track: string;
-    artist: string;
-    plays: number;
-    totalMs: number;
-    firstPlayed: string;
-    lastPlayed: string;
-}
+import { applyTrackBusterFilters, FilteredTrack } from '../context/utils';
 
 export default function DashboardPage() {
-    const { rawHistory, isApiData } = useHistory();
-    const { data: session } = useSession();
+    const { rawHistory } = useHistory();
 
     const [results, setResults] = useState<FilteredTrack[]>([]);
     const [isLoading, setIsLoading] = useState<boolean>(false);
-    const [isCreatingPlaylist, setIsCreatingPlaylist] = useState<boolean>(false);
     const [errorMessage, setErrorMessage] = useState<string>('');
     const [successMessage, setSuccessMessage] = useState<string>('');
+    const [showGuide, setShowGuide] = useState<boolean>(false);
 
     const [minPlays, setMinPlays] = useState<string>('');
     const [maxPlays, setMaxPlays] = useState<string>('');
@@ -58,80 +48,31 @@ export default function DashboardPage() {
     const handleApplyFilters = (e: React.FormEvent) => {
         e.preventDefault();
         if (rawHistory.length === 0) {
-            setErrorMessage('Por favor, sube tus archivos JSON o conecta tu cuenta en el inicio.');
+            setErrorMessage('Por favor, sube tus archivos JSON en la pantalla de inicio.');
             return;
         }
 
         setIsLoading(true);
         setCurrentPage(1);
         setSuccessMessage('');
+        setShowGuide(false);
 
         setTimeout(() => {
             try {
-                const trackCounts: Record<string, FilteredTrack> = {};
+                const config = {
+                    minPlays,
+                    maxPlays,
+                    startDate,
+                    endDate,
+                    minWords,
+                    maxWords,
+                    includedArtists,
+                    excludedArtists
+                };
 
-                const filterStartDate = startDate ? new Date(startDate) : null;
-                const filterEndDate = endDate ? new Date(endDate) : null;
-
-                const excludedLower = excludedArtists.map(a => a.toLowerCase());
-                const includedLower = includedArtists.map(a => a.toLowerCase());
-
-                rawHistory.forEach((item) => {
-                    if (!item.artistName || !item.trackName) return;
-
-                    if (!isApiData && item.msPlayed < 10000) return;
-
-                    const wordCount = item.trackName.trim().split(/\s+/).filter(Boolean).length;
-                    const minW = minWords !== '' ? Math.max(0, Number(minWords)) : 0;
-                    const maxW = maxWords !== '' ? Math.max(0, Number(maxWords)) : Infinity;
-                    if (wordCount < minW || wordCount > maxW) return;
-
-                    const currentArtistLower = item.artistName.toLowerCase();
-
-                    if (excludedLower.length > 0 && excludedLower.includes(currentArtistLower)) return;
-                    if (includedLower.length > 0 && !includedLower.includes(currentArtistLower)) return;
-
-                    const formattedDate = item.endTime ? item.endTime.replace(' ', 'T') : new Date().toISOString();
-                    const playDate = new Date(formattedDate);
-
-                    if (!isApiData) {
-                        if (filterStartDate && playDate < filterStartDate) return;
-                        if (filterEndDate && playDate > filterEndDate) return;
-                    }
-
-                    const trackId = `${item.trackName} ||| ${item.artistName}`;
-
-                    if (!trackCounts[trackId]) {
-                        trackCounts[trackId] = {
-                            track: item.trackName,
-                            artist: item.artistName,
-                            plays: 0,
-                            totalMs: 0,
-                            firstPlayed: item.endTime || formattedDate,
-                            lastPlayed: item.endTime || formattedDate
-                        };
-                    }
-
-                    trackCounts[trackId].plays++;
-                    trackCounts[trackId].totalMs += item.msPlayed;
-
-                    if (!isApiData && item.endTime) {
-                        if (new Date(formattedDate) < new Date(trackCounts[trackId].firstPlayed.replace(' ', 'T'))) {
-                            trackCounts[trackId].firstPlayed = item.endTime;
-                        }
-                        if (new Date(formattedDate) > new Date(trackCounts[trackId].lastPlayed.replace(' ', 'T'))) {
-                            trackCounts[trackId].lastPlayed = item.endTime;
-                        }
-                    }
-                });
-
-                const filtered = Object.values(trackCounts).filter((item) => {
-                    const min = minPlays !== '' ? Math.max(0, Number(minPlays)) : 0;
-                    const max = maxPlays !== '' ? Math.max(0, Number(maxPlays)) : Infinity;
-                    return item.plays >= min && item.plays <= max;
-                });
-
+                const filtered = applyTrackBusterFilters(rawHistory, config);
                 filtered.sort((a, b) => b.plays - a.plays);
+
                 setResults(filtered);
                 setErrorMessage('');
             } catch (err) {
@@ -142,113 +83,28 @@ export default function DashboardPage() {
         }, 50);
     };
 
-    const handleCreateSpotifyPlaylist = async () => {
-        if (!session?.accessToken) {
-            setErrorMessage('Debes iniciar sesión con Spotify para usar esta función.');
-            return;
-        }
-
+    const handleExportPlaylist = () => {
         if (results.length === 0) return;
 
-        const userCustomName = prompt(
-            "📝 ¿Qué nombre quieres ponerle a tu nueva Playlist?",
-            "Mi Filtro Personalizado 🚀"
-        );
+        const fileContent = results
+            .map((item) => `${item.artist} - ${item.track}`)
+            .join('\n');
 
-        if (userCustomName === null) return;
+        const blob = new Blob([fileContent], { type: 'text/plain;charset=utf-8' });
+        const url = URL.createObjectURL(blob);
 
-        const finalPlaylistName = userCustomName.trim() || `Filtro TrackBuster (${new Date().toLocaleDateString('es-ES')})`;
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `playlist-trackbuster-${new Date().toISOString().slice(0,10)}.txt`;
+        document.body.appendChild(link);
+        link.click();
 
-        setIsCreatingPlaylist(true);
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+
+        setSuccessMessage(`📥 ¡Archivo .txt descargado con éxito con ${results.length} canciones!`);
         setErrorMessage('');
-        setSuccessMessage('');
-
-        const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
-        let addedCount = 0;
-
-        try {
-            const playlistRes = await fetch('https://api.spotify.com/v1/me/playlists', {
-                method: 'POST',
-                headers: {
-                    'Authorization': `Bearer ${session.accessToken}`,
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({
-                    name: finalPlaylistName,
-                    description: `Playlist optimizada generada desde tu panel de filtros de TrackBuster el ${new Date().toLocaleDateString('es-ES')}.`,
-                    public: false
-                })
-            });
-
-            if (!playlistRes.ok) {
-                const errorData = await playlistRes.json().catch(() => ({}));
-                throw new Error(`Error al crear lista (${playlistRes.status}): ${errorData.error?.message || 'Revisa permisos.'}`);
-            }
-
-            const playlistData = await playlistRes.json();
-            const playlistId = playlistData.id;
-
-            const tracksToSearch = results.slice(0, 25);
-            console.log(`Iniciando inserción incremental uno a uno para ${tracksToSearch.length} canciones...`);
-
-            for (const item of tracksToSearch) {
-                try {
-                    await delay(200);
-
-                    const searchRes = await fetch(`https://api.spotify.com/v1/search?q=track:${encodeURIComponent(item.track)}+artist:${encodeURIComponent(item.artist)}&type=track&limit=1`, {
-                        headers: { 'Authorization': `Bearer ${session.accessToken}` }
-                    });
-
-                    if (searchRes.status === 429) {
-                        console.warn(`[429] Búsqueda saturada para: ${item.track}. Esperando 1.5 segundos...`);
-                        await delay(1500);
-                        continue;
-                    }
-
-                    if (searchRes.ok) {
-                        const searchData = await searchRes.json();
-                        const uri = searchData.tracks?.items[0]?.uri;
-
-                        if (uri) {
-                            const appendRes = await fetch(`https://api.spotify.com/v1/playlists/${playlistId}/tracks`, {
-                                method: 'POST',
-                                headers: {
-                                    'Authorization': `Bearer ${session.accessToken}`,
-                                    'Content-Type': 'application/json'
-                                },
-                                body: JSON.stringify({ uris: [uri] })
-                            });
-
-                            if (appendRes.status === 429) {
-                                console.warn(`[429] Inserción saturada para: ${item.track}. Esperando 1.5 segundos...`);
-                                await delay(1500);
-                                continue;
-                            }
-
-                            if (appendRes.ok) {
-                                addedCount++;
-                                console.log(`✓ Añadida con éxito [${addedCount}]: ${item.track}`);
-                            }
-                        } else {
-                            console.log(`✗ No se encontró coincidencia exacta para: ${item.track}`);
-                        }
-                    }
-                } catch (err) {
-                    console.error(`Error procesando de forma incremental el track ${item.track}:`, err);
-                }
-            }
-
-            if (addedCount === 0) {
-                throw new Error('Tu cuota temporal de la API de Spotify está totalmente saturada en este momento. La lista se ha creado en tu perfil, pero no se han podido buscar las canciones. Por favor, dale un par de minutos de margen e inténtalo de nuevo.');
-            }
-
-            setSuccessMessage(`¡Brutal! Playlist "${finalPlaylistName}" actualizada en tiempo real con ${addedCount} canciones de tu filtro.`);
-        } catch (err: any) {
-            console.error("Error en el proceso general:", err);
-            setErrorMessage(err.message || 'Error inesperado al intentar generar la playlist.');
-        } finally {
-            setIsCreatingPlaylist(false);
-        }
+        setShowGuide(true);
     };
 
     const totalDurationHours = useMemo(() => {
@@ -284,7 +140,7 @@ export default function DashboardPage() {
     };
 
     return (
-        <div className="flex flex-1 w-full h-full overflow-hidden bg-slate-50">
+        <div className="flex flex-1 w-full h-[calc(100vh-62px)] overflow-hidden bg-slate-50">
             <aside className="w-80 bg-white border-r border-slate-200 flex flex-col h-full shrink-0 overflow-hidden">
                 <form onSubmit={handleApplyFilters} className="flex flex-col h-full overflow-hidden">
                     <div className="flex-1 overflow-y-auto p-6 space-y-6">
@@ -295,7 +151,7 @@ export default function DashboardPage() {
 
                         {rawHistory.length === 0 && (
                             <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-xs text-amber-700 font-medium">
-                                ⚠️ No hay datos cargados. Ve a la pestaña de inicio para conectar tu cuenta o subir JSONs.
+                                ⚠️ No hay datos cargados. Ve a la pestaña de inicio para subir tus JSONs.
                             </div>
                         )}
 
@@ -326,21 +182,20 @@ export default function DashboardPage() {
                                 />
                             </div>
                         </div>
-                        {!isApiData && (
-                            <div>
-                                <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-2">Rango de Fechas</label>
-                                <div className="space-y-2">
-                                    <input
-                                        type="date" value={startDate} onChange={e => setStartDate(e.target.value)}
-                                        className="w-full bg-slate-100 border border-slate-200 rounded-lg p-2 text-sm text-slate-600 focus:outline-none focus:border-indigo-500"
-                                    />
-                                    <input
-                                        type="date" value={endDate} onChange={e => setEndDate(e.target.value)}
-                                        className="w-full bg-slate-100 border border-slate-200 rounded-lg p-2 text-sm text-slate-600 focus:outline-none focus:border-indigo-500"
-                                    />
-                                </div>
+
+                        <div>
+                            <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-2">Rango de Fechas</label>
+                            <div className="space-y-2">
+                                <input
+                                    type="date" value={startDate} onChange={e => setStartDate(e.target.value)}
+                                    className="w-full bg-slate-100 border border-slate-200 rounded-lg p-2 text-sm text-slate-600 focus:outline-none focus:border-indigo-500"
+                                />
+                                <input
+                                    type="date" value={endDate} onChange={e => setEndDate(e.target.value)}
+                                    className="w-full bg-slate-100 border border-slate-200 rounded-lg p-2 text-sm text-slate-600 focus:outline-none focus:border-indigo-500"
+                                />
                             </div>
-                        )}
+                        </div>
 
                         <div className="relative border-t border-slate-100 pt-4">
                             <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-2">Filtro Global de Artistas</label>
@@ -418,6 +273,7 @@ export default function DashboardPage() {
 
                 </form>
             </aside>
+
             <main className="flex-1 bg-slate-50 p-8 overflow-y-auto h-full">
                 <div className="max-w-5xl mx-auto space-y-6">
 
@@ -442,19 +298,66 @@ export default function DashboardPage() {
                     <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden flex flex-col">
                         <div className="p-4 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
                             <span className="text-sm font-bold text-slate-700">Resultados Detallados</span>
-                            {isApiData || session?.accessToken ? (
+                            {results.length > 0 && (
                                 <button
                                     type="button"
-                                    disabled={isCreatingPlaylist || results.length === 0}
-                                    onClick={handleCreateSpotifyPlaylist}
-                                    className="text-xs bg-emerald-500 hover:bg-emerald-600 border border-emerald-600/20 text-white font-bold px-3 py-1.5 rounded-xl transition-all disabled:opacity-40 cursor-pointer shadow-sm flex items-center gap-1.5"
+                                    onClick={handleExportPlaylist}
+                                    className="text-xs bg-indigo-600 hover:bg-indigo-700 border border-indigo-700/20 text-white font-bold px-3 py-1.5 rounded-xl transition-all cursor-pointer shadow-sm flex items-center gap-1.5"
                                 >
-                                    🟢 {isCreatingPlaylist ? 'Buscando y creando...' : 'Crear Playlist en Spotify'}
+                                    📥 Descargar Playlist (.txt)
                                 </button>
-                            ) : (
-                                <button type="button" className="text-xs text-indigo-600 font-semibold hover:underline">↓ Exportar CSV</button>
                             )}
                         </div>
+
+                        {showGuide && (
+                            <div className="p-6 bg-gradient-to-br from-indigo-50/40 via-indigo-50/10 to-white border-b border-slate-100 space-y-4 animate-in fade-in duration-300">
+                                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                                    <div className="space-y-0.5">
+                                        <h3 className="text-sm font-extrabold text-slate-900 flex items-center gap-2">
+                                            <span>✨</span> ¡Siguiente paso: Pásala a tu Spotify!
+                                        </h3>
+                                        <p className="text-xs text-slate-500 leading-normal max-w-2xl">
+                                            Usa una de estas plataformas gratuitas para sincronizar el archivo <span className="font-mono text-indigo-600 bg-indigo-50/80 px-1.5 py-0.5 rounded font-semibold text-[11px]">.txt</span> que acabas de descargar directamente con tu cuenta musical.
+                                        </p>
+                                    </div>
+                                    <div className="flex gap-2 shrink-0">
+                                        <a
+                                            href="https://www.tunemymusic.com/?source=txt" target="_blank" rel="noreferrer"
+                                            className="text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-500 px-4 py-2.5 rounded-xl shadow-sm transition-all text-center flex items-center gap-1.5"
+                                        >
+                                            🔗 Ir a TuneMyMusic
+                                        </a>
+                                        <a
+                                            href="https://soundiiz.com/" target="_blank" rel="noreferrer"
+                                            className="text-xs font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 border border-slate-200 px-4 py-2.5 rounded-xl transition-all text-center"
+                                        >
+                                            Ir a Soundiiz
+                                        </a>
+                                    </div>
+                                </div>
+
+                                <div className="grid grid-cols-1 md:grid-cols-3 gap-3 pt-2">
+                                    <div className="bg-white p-3 rounded-xl border border-slate-200/60 shadow-sm flex items-start gap-3">
+                                        <span className="font-mono text-xs font-black text-indigo-600 bg-indigo-50 w-5 h-5 rounded-full flex items-center justify-center shrink-0">1</span>
+                                        <p className="text-[11px] text-slate-600 leading-relaxed">
+                                            Entra en la plataforma y selecciona <strong>"Texto"</strong> o <strong>"Subir Archivo"</strong> como la fuente de origen.
+                                        </p>
+                                    </div>
+                                    <div className="bg-white p-3 rounded-xl border border-slate-200/60 shadow-sm flex items-start gap-3">
+                                        <span className="font-mono text-xs font-black text-indigo-600 bg-indigo-50 w-5 h-5 rounded-full flex items-center justify-center shrink-0">2</span>
+                                        <p className="text-[11px] text-slate-600 leading-relaxed">
+                                            Arrastra el archivo <span className="font-mono font-semibold text-slate-800">.txt</span> descargado. La web buscará y emparejará las canciones de inmediato.
+                                        </p>
+                                    </div>
+                                    <div className="bg-white p-3 rounded-xl border border-slate-200/60 shadow-sm flex items-start gap-3">
+                                        <span className="font-mono text-xs font-black text-indigo-600 bg-indigo-50 w-5 h-5 rounded-full flex items-center justify-center shrink-0">3</span>
+                                        <p className="text-[11px] text-slate-600 leading-relaxed">
+                                            Elige <strong>Spotify</strong> como destino, dale a comenzar conversión y ¡listo!, aparecerá mágica en tu biblioteca.
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
 
                         {results.length === 0 ? (
                             <div className="h-96 flex flex-col items-center justify-center text-slate-400 text-center px-4">
@@ -535,7 +438,6 @@ export default function DashboardPage() {
                             </>
                         )}
                     </div>
-
                 </div>
             </main>
         </div>

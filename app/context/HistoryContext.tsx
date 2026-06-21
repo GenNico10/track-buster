@@ -1,7 +1,6 @@
 'use client';
 
 import React, { createContext, useContext, useState, ReactNode, useMemo } from 'react';
-import { useSession } from 'next-auth/react';
 
 export interface SpotifyStreamItem {
     endTime?: string;
@@ -48,10 +47,6 @@ interface HistoryContextType {
     setCurrentPeriod: (period: 'all' | 'year') => void;
     showPeriodToggle: boolean;
     globalStats: PeriodStats;
-    isApiData: boolean;
-    isLoadingSpotify: boolean;
-    spotifyError: string | null;
-    syncWithSpotify: () => Promise<boolean>;
 }
 
 const HistoryContext = createContext<HistoryContextType | undefined>(undefined);
@@ -60,78 +55,14 @@ export function HistoryProvider({ children }: { children: ReactNode }) {
     const [rawHistory, setRawHistory] = useState<SpotifyStreamItem[]>([]);
     const [currentPeriod, setCurrentPeriod] = useState<'all' | 'year'>('all');
 
-    const [isApiData, setIsApiData] = useState<boolean>(false);
-    const [isLoadingSpotify, setIsLoadingSpotify] = useState<boolean>(false);
-    const [spotifyError, setSpotifyError] = useState<string | null>(null);
-
-    const { data: session } = useSession();
-
     const clearHistory = () => {
         setRawHistory([]);
         setCurrentPeriod('all');
-        setIsApiData(false);
-        setSpotifyError(null);
     };
 
     const isUnknown = (name: string) => {
         const lower = name.toLowerCase().trim();
         return lower === 'unknown track' || lower === 'unknown artist' || lower === 'unknown';
-    };
-
-    const syncWithSpotify = async (): Promise<boolean> => {
-        if (!session?.accessToken) {
-            setSpotifyError("No se encontró ninguna sesión activa de Spotify.");
-            return false;
-        }
-
-        setIsLoadingSpotify(true);
-        setSpotifyError(null);
-
-        try {
-            const [shortTerm, mediumTerm, longTerm] = await Promise.all([
-                fetch('https://api.spotify.com/v1/me/top/tracks?limit=50&time_range=short_term', {
-                    headers: { Authorization: `Bearer ${session.accessToken}` }
-                }).then(res => res.json()),
-                fetch('https://api.spotify.com/v1/me/top/tracks?limit=50&time_range=medium_term', {
-                    headers: { Authorization: `Bearer ${session.accessToken}` }
-                }).then(res => res.json()),
-                fetch('https://api.spotify.com/v1/me/top/tracks?limit=50&time_range=long_term', {
-                    headers: { Authorization: `Bearer ${session.accessToken}` }
-                }).then(res => res.json()),
-            ]);
-
-            const allItems = [...(shortTerm.items || []), ...(mediumTerm.items || []), ...(longTerm.items || [])];
-            const uniqueItems = Array.from(new Map(allItems.map(item => [item.id, item])).values());
-            const mappedTracks: SpotifyStreamItem[] = [];
-            const baseDate = new Date();
-
-            uniqueItems.forEach((item: any, index) => {
-                const streamDate = new Date(baseDate);
-                streamDate.setDate(baseDate.getDate() - Math.floor(index * 1.5));
-
-                const formattedDate = streamDate.toISOString().replace('T', ' ').substring(0, 16);
-                const plays = Math.floor(Math.random() * 3) + 1;
-
-                for (let p = 0; p < plays; p++) {
-                    mappedTracks.push({
-                        endTime: formattedDate,
-                        artistName: item.artists[0]?.name || 'Artista Desconocido',
-                        trackName: item.name,
-                        msPlayed: 200000,
-                    });
-                }
-            });
-
-            setRawHistory(mappedTracks);
-            setIsApiData(true);
-            return true;
-        } catch (error: any) {
-            console.error("Error combinando la API híbrida de Spotify:", error);
-            setSpotifyError(error.message || "Error al sincronizar tu biblioteca musical.");
-            return false;
-        } finally {
-            setIsLoadingSpotify(false);
-        }
     };
 
     const showPeriodToggle = useMemo(() => {
@@ -263,11 +194,7 @@ export function HistoryProvider({ children }: { children: ReactNode }) {
             currentPeriod,
             setCurrentPeriod,
             showPeriodToggle,
-            globalStats,
-            isApiData,
-            isLoadingSpotify,
-            spotifyError,
-            syncWithSpotify
+            globalStats
         }}>
             {children}
         </HistoryContext.Provider>
